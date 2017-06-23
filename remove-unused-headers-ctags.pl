@@ -25,8 +25,7 @@ my %ignoredHeaders = (
     'wtf/text/IntegerToStringConversion.h' => 1,
     'wtf/text/WTFString.h' => 1,
     'Settings.h' => 1,
-    'runtime/Float32Array.h' => 1,
-    'runtime/Float64Array.h' => 1
+    'GraphicsContext3D.h' => 1
 );
 
 sub headerIsIgnored {
@@ -34,25 +33,11 @@ sub headerIsIgnored {
 
     return 1 if (exists $ignoredHeaders{$header});
 
+    return 1 if $header =~ m{^runtime/.*Array.h$};
+
     return 1 if $header =~ m{^unicode/} || $header =~ m{^sys/} || $header =~ m{^mach/} || $header =~ m{^System/} || $header =~ m{^Security/} || $header =~ m{^dispatch/} || $header =~ m{^CommonCrypto/} || $header =~ m{^machine/} || $header =~ m{^objc/} || $header =~ m{^gio/} || $header =~ m{^wtf/spi/} || $header =~ m{CoreFoundation/} || $header =~ m{^xpc/} || $header =~ m{^mach-o/} || $header =~ m{^os/} || $header =~ m{^WebKitAdditions/};
     return 1 if $header =~ /Inlines\.h$/ || $header =~ /intrin\.h$/ || $header =~ /Hash\.h/;
-    return 1 if $header =~ /^std/ || $header !~ /\.h$/;
-
-    # Skip headers missing in ctags database
-    seek($ctags_db, 0, 0) or die "Cannot rewind tags file: $!";
-    for my $line (<$ctags_db>) {
-        # Roughly search for target file name
-        next if index($line, $header) == -1;
-
-        my ($filename) = (split "\t", $line, 3)[1];
-
-        # Filename should match exactly
-        return "" if ($filename eq $header) || $filename =~ m{/$header$};
-    }
-
-    print "Ignored header: $header\n";
-    $ignoredHeaders{$header} = 1;
-    return 1;
+    return $header =~ /^std/ || $header !~ /\.h$/;
 }
 
 my %genericWords = (
@@ -249,9 +234,17 @@ sub parseFile {
     LINE: for my $line (@$lines) {
         if ($line =~ /^#include [<"](\S+)[>"]/) {
             my $header = $1;
-            next LINE if headerIsIgnored($header);
+            if (headerIsIgnored($header)) {
+                print "Ignored header: $header\n";
+                next LINE;
+            }
 
             my @ids = identifiersForHeader($header);
+            if (!@ids) {
+                print "Skipping header which has no identifiers: $header\n";
+                next LINE;
+            }
+
             $headers->{$header} = \@ids;
             for my $i (@ids) {
                 $identifiers{$i} = $header;
